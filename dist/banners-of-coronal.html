@@ -1724,6 +1724,7 @@ function pickTarget(attackerSide){
   if(front.length)return pick(front);
   return pick(foes);
 }
+function effDef(bu){ return bu.rageT>B.t ? bu.u.def*0.65 : bu.u.def; } /* BLOOD RAGE: reckless, DEF down */
 function dealDamage(src,tgt,raw,cls){
   let dmg=raw;
   if(tgt.act==='defend')dmg*=0.5;
@@ -1756,7 +1757,7 @@ function unitAct(b){
   if(!tgt){b.atb=0; return;}
   const rowPen=(b.row==='back'&&!u.rng)?0.6:1;
   const crit=Math.random()<0.08;
-  let raw=(u.atk*2 - tgt.u.def)*rowPen*atkMul*(0.9+Math.random()*0.2);
+  let raw=(u.atk*2 - effDef(tgt))*rowPen*atkMul*(0.9+Math.random()*0.2);
   if(b.row==='front'&&u.rng&&u.job!=='Priest')raw*=1.15; /* point blank */
   raw=Math.max(2,raw)*(crit?1.7:1);
   dealDamage(b,tgt,raw,crit?'crit':'');
@@ -1773,10 +1774,10 @@ function castSpec(b,sp,atkMul){
       if(t){const h=Math.round(M*2.2*sp.pow); t.u.hp=clamp(t.u.hp+h,0,t.u.maxhp); dmgPop(t.u.id,'+'+h,'heal'); atbLog(u.name+': '+sp.n+' heals '+t.u.name+'.');} break;}
     case 'healAll':{ allies.forEach(t=>{const h=Math.round(M*1.5*sp.pow); t.u.hp=clamp(t.u.hp+h,0,t.u.maxhp); dmgPop(t.u.id,'+'+h,'heal');}); atbLog(u.name+': '+sp.n+'!','imp'); break;}
     case 'selfheal':{ const h=Math.round(u.maxhp*0.35*sp.pow); u.hp=clamp(u.hp+h,0,u.maxhp); dmgPop(u.id,'+'+h,'heal'); break;}
-    case 'aoe':{ const front=foes.filter(f=>f.row==='front'); (front.length?front:foes).forEach(t=>dealDamage(b,t,(M*2-t.u.def*0.5)*sp.pow*atkMul,'magic')); atbLog(u.name+': '+sp.n+'!','imp'); break;}
-    case 'aoeAll':{ foes.forEach(t=>dealDamage(b,t,(M*2-t.u.def*0.4)*sp.pow*atkMul,'magic')); atbLog(u.name+': '+sp.n+'!','imp'); break;}
+    case 'aoe':{ const front=foes.filter(f=>f.row==='front'); (front.length?front:foes).forEach(t=>dealDamage(b,t,(M*2-effDef(t)*0.5)*sp.pow*atkMul,'magic')); atbLog(u.name+': '+sp.n+'!','imp'); break;}
+    case 'aoeAll':{ foes.forEach(t=>dealDamage(b,t,(M*2-effDef(t)*0.4)*sp.pow*atkMul,'magic')); atbLog(u.name+': '+sp.n+'!','imp'); break;}
     case 'drain':{ const t=pickTarget(b.side); if(t){const d=dealDamage(b,t,(M+u.atk)*sp.pow*atkMul,'magic'); u.hp=clamp(u.hp+Math.round(d*0.6),0,u.maxhp); dmgPop(u.id,'+'+Math.round(d*0.6),'heal');} break;}
-    case 'pierce':{ const t=pickTarget(b.side); if(t)dealDamage(b,t,(u.atk*2-t.u.def*0.5)*sp.pow*atkMul,'crit'); break;}
+    case 'pierce':{ const t=pickTarget(b.side); if(t)dealDamage(b,t,(u.atk*2-effDef(t)*0.5)*sp.pow*atkMul,'crit'); break;}
     case 'exec':{ const weak=foes.slice().sort((a,c)=>a.u.hp-c.u.hp)[0]; if(weak)dealDamage(b,weak,(u.atk*sp.pow+ (weak.u.hp<weak.u.maxhp*0.35?u.atk:0))*atkMul,'crit'); atbLog(u.name+': EXECUTE!','imp'); break;}
     case 'stun':{ const t=pickTarget(b.side); if(t){dealDamage(b,t,(u.atk*1.6)*sp.pow*atkMul,''); t.atb=Math.min(t.atb,-30); atbLog(t.u.name+' is staggered!');} break;}
     case 'mark':{ const t=foes[rnd(foes.length)]; if(t){t.marked=true; dmgPop(t.u.id,'MARKED','magic'); atbLog(u.name+' marks '+t.u.name+'.');} break;}
@@ -1784,7 +1785,7 @@ function castSpec(b,sp,atkMul){
     case 'guard':{ if(b.side==='pl')B.buffs.plDef=1+sp.pow; else B.buffs.enDef=1+sp.pow; atbLog(u.name+': '+sp.n+' — DEF UP!','imp'); break;}
     case 'veil':{ if(b.side==='pl')B.buffs.enAtk=Math.max(0.5,1-sp.pow); else B.buffs.plAtk=Math.max(0.5,1-sp.pow); atbLog(u.name+': '+sp.n+'!'); break;}
     case 'vanish':{ b.vanished=true; dmgPop(u.id,'VANISH','magic'); break;}
-    case 'fade':{ const t=pickTarget(b.side); if(t)dealDamage(b,t,(u.atk*2-t.u.def)*sp.pow,''); b.fadeT=B.t+4000; break;}
+    case 'fade':{ const t=pickTarget(b.side); if(t)dealDamage(b,t,(u.atk*2-effDef(t))*sp.pow,''); b.fadeT=B.t+4000; break;}
     case 'rage':{ b.rageT=B.t+8000; dmgPop(u.id,'RAGE!','crit'); break;}
   }
 }
@@ -1796,7 +1797,7 @@ function commanderAbility(b){
     case 'buff': B.buffs.plAtk=1+a.pow; atbLog('RALLY! The banner\'s blood is up!','imp'); break;
     case 'atbhit': foes.forEach(f=>f.atb=Math.max(-20,f.atb-a.pow)); atbLog('WAR CRY! The foe reels!','imp'); break;
     case 'healAll': allies.forEach(t=>{const h=Math.round(b.u.mag*2*a.pow+10); t.u.hp=clamp(t.u.hp+h,0,t.u.maxhp); dmgPop(t.u.id,'+'+h,'heal');}); atbLog('MEND BANNER!','imp'); break;
-    case 'aoeAll': foes.forEach(t=>dealDamage(b,t,(b.u.mag*2.4-t.u.def*0.4)*a.pow,'magic')); atbLog('FLAME OF COMMAND!','imp'); break;
+    case 'aoeAll': foes.forEach(t=>dealDamage(b,t,(b.u.mag*2.4-effDef(t)*0.4)*a.pow,'magic')); atbLog('FLAME OF COMMAND!','imp'); break;
     case 'revive':{ const dead=B.pl.filter(x=>x.u.hp<=0&&!x.retreated);
       if(dead.length){const t=pick(dead); t.u.hp=Math.round(t.u.maxhp*a.pow); t.atb=0; dmgPop(t.u.id,'RISE!','heal'); atbLog(t.u.name+' rises again!','imp'); renderATB();}
       else atbLog('No fallen to raise.'); break;}
