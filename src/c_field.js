@@ -266,8 +266,7 @@ function initField(cfg){
    </div>`;
   show('field');
   buildTiles();
-  const TILEC={'.':'t-plain','c':'t-crate','#':'t-wall','w':'t-water','b':'t-bridge','F':'t-fort','C':'t-camp','s':'t-scrub'};
-  F.TILECLASS=TILEC; F.COST={'.':1,'b':1,'F':1,'C':1,'s':2};
+  F.COST={'.':1,'b':1,'F':1,'C':1,'s':2};
   /* enemy parties from cfg.foes split into packs */
   const groups=Array.from({length:cfg.packs},()=>[]);
   cfg.foes.forEach((f,i)=>groups[i%cfg.packs].push(f));
@@ -308,17 +307,18 @@ const passable=(x,y)=>x>=0&&y>=0&&x<F.W&&y<F.H&&F.COST[F.grid[y][x]]!==undefined
 const cheb=(x1,y1,x2,y2)=>Math.max(Math.abs(x1-x2),Math.abs(y1-y2));
 const DIRS={N:[0,-1],S:[0,1],E:[1,0],W:[-1,0]};
 const ARROW={N:'▲',S:'▼',E:'▶',W:'◀'};
+const TILEC={'.':'t-plain','c':'t-crate','#':'t-wall','w':'t-water','b':'t-bridge','F':'t-fort','C':'t-camp','s':'t-scrub'};
 function buildTiles(){
-  const TILEC={'.':'t-plain','c':'t-crate','#':'t-wall','w':'t-water','b':'t-bridge','F':'t-fort','C':'t-camp','s':'t-scrub'};
   const mapEl=$('map');
   mapEl.style.gridTemplateColumns=`repeat(${F.W},${F.TS}px)`;
-  F.tileEls=[];
+  F.tileEls=[]; F.fogEls=[];
   for(let y=0;y<F.H;y++)for(let x=0;x<F.W;x++){
     const t=document.createElement('div');
     t.className='tile '+TILEC[F.grid[y][x]]+(((x+y)%2)&&'.c'.includes(F.grid[y][x])?' alt':'');
     t.dataset.x=x; t.dataset.y=y;
-    t.innerHTML='<div class="fog"></div>';
-    mapEl.appendChild(t); F.tileEls.push(t);
+    const fog=document.createElement('div'); fog.className='fog';
+    t.appendChild(fog);
+    mapEl.appendChild(t); F.tileEls.push(t); F.fogEls.push(fog);
   }
 }
 function visionOf(p){
@@ -343,8 +343,8 @@ function computeVision(){
 }
 function renderFog(){
   for(let y=0;y<F.H;y++)for(let x=0;x<F.W;x++){
-    const k=x+','+y,f=tileAt(x,y).querySelector('.fog');
-    f.className='fog '+(F.visible.has(k)?'lit':F.explored.has(k)?'dim':'dark');
+    const k=x+','+y;
+    F.fogEls[y*F.W+x].className='fog '+(F.visible.has(k)?'lit':F.explored.has(k)?'dim':'dark');
   }
   F.parties.forEach(p=>{ if(p.side==='en')p.el.style.display=F.visible.has(p.x+','+p.y)?'':'none'; });
   updateTopbar();
@@ -385,20 +385,29 @@ function drawGarrisonBadges(){
 }
 function partyAtF(x,y){ return F.parties.find(p=>p.x===x&&p.y===y&&p.units.some(u=>u.hp>0)); }
 function bfsF(p){
+  /* Dial's algorithm: tile costs are only 1 or 2, so a bucket queue gives exact
+     shortest paths in O(V+E) — a plain FIFO queue would be wrong here since
+     scrub tiles cost more than plain ground, breaking BFS's equal-weight assumption. */
   const spd=partySpeed(p.units.filter(u=>u.hp>0));
-  const dist={},prev={}; dist[p.x+','+p.y]=0;
-  const q=[[p.x,p.y]];
-  while(q.length){
-    const [cx,cy]=q.shift(); const d=dist[cx+','+cy];
-    for(const k in DIRS){
-      const nx=cx+DIRS[k][0],ny=cy+DIRS[k][1];
-      if(!passable(nx,ny))continue;
-      if(partyAtF(nx,ny))continue;
-      if(nx===F.HQ_EN.x&&ny===F.HQ_EN.y&&F.HQ_EN.garrison.some(u=>u.hp>0))continue;
-      const nd=d+F.COST[F.grid[ny][nx]];
-      if(nd>spd)continue;
-      const key=nx+','+ny;
-      if(dist[key]===undefined||nd<dist[key]){dist[key]=nd; prev[key]=cx+','+cy; q.push([nx,ny]);}
+  const dist={},prev={}; const startKey=p.x+','+p.y; dist[startKey]=0;
+  const buckets=[[[p.x,p.y]]];
+  for(let d=0;d<=spd;d++){
+    const bucket=buckets[d]; if(!bucket)continue;
+    for(const [cx,cy] of bucket){
+      if(dist[cx+','+cy]!==d)continue; /* stale entry, already improved */
+      for(const k in DIRS){
+        const nx=cx+DIRS[k][0],ny=cy+DIRS[k][1];
+        if(!passable(nx,ny))continue;
+        if(partyAtF(nx,ny))continue;
+        if(nx===F.HQ_EN.x&&ny===F.HQ_EN.y&&F.HQ_EN.garrison.some(u=>u.hp>0))continue;
+        const nd=d+F.COST[F.grid[ny][nx]];
+        if(nd>spd)continue;
+        const key=nx+','+ny;
+        if(dist[key]===undefined||nd<dist[key]){
+          dist[key]=nd; prev[key]=cx+','+cy;
+          (buckets[nd]=buckets[nd]||[]).push([nx,ny]);
+        }
+      }
     }
   }
   return {dist,prev,spd};

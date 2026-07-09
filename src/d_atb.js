@@ -13,7 +13,7 @@ function fieldAttack(att,def){
   const fb=facingBonusFrom(att.x,att.y,def);
   att.moved=true; att.acted=true;
   announce(`<div class="big">${fb.label}</div>${att.side==='pl'?att.id:'☠ '+att.id} engages ${def.id}!`);
-  openATB({pl:att.side==='pl'?att:def, en:att.side==='pl'?def:att,
+  return openATB({pl:att.side==='pl'?att:def, en:att.side==='pl'?def:att,
     attackerIsPl:att.side==='pl', fb, siege:null});
 }
 function fieldSiege(att,hq){
@@ -21,12 +21,12 @@ function fieldSiege(att,hq){
   if(!gU.length){
     if(hq===F.HQ_EN){flog(att.id+' storms the undefended keep!','good'); fieldEnd(true);}
     else{flog('The camp falls!','bad'); fieldEnd(false);}
-    return;
+    return Promise.resolve();
   }
   att.moved=true; att.acted=true;
   const gar={id:hq.type+' GARRISON', side:att.side==='pl'?'en':'pl', units:hq.garrison, isGarrison:hq};
   announce(`<div class="big">SIEGE!</div>${att.side==='pl'?att.id:'☠ '+att.id} assaults the ${hq.type}!`);
-  openATB({pl:att.side==='pl'?att:gar, en:att.side==='pl'?gar:att,
+  return openATB({pl:att.side==='pl'?att:gar, en:att.side==='pl'?gar:att,
     attackerIsPl:att.side==='pl', fb:{mult:1,label:'SIEGE',adv:0,flip:false}, siege:hq});
 }
 
@@ -34,6 +34,8 @@ function fieldSiege(att,hq){
 let B=null;
 const ACTICON={attack:'⚔',defend:'🛡',special:'✦',retreat:'🏃'};
 function openATB(cfg){
+  let resolveEnd;
+  const done=new Promise(res=>{resolveEnd=res;});
   hideOrders(); clearHi();
   const modal=document.createElement('div');
   modal.id='atb'; modal.className='modal show';
@@ -58,7 +60,7 @@ function openATB(cfg){
   const plParty=cfg.pl, enParty=cfg.en;
   $('atbNames').textContent=(plParty.id||'BANNER')+' VS '+(enParty.id||'FOE');
   B={cfg, pl:[], en:[], over:false, ticker:null, queue:[], acting:false,
-     plFlip:false, buffs:{plAtk:1,plDef:1,enAtk:1,enDef:1}, cds:{}, t:0};
+     plFlip:false, buffs:{plAtk:1,plDef:1,enAtk:1,enDef:1}, cds:{}, t:0, onEnd:resolveEnd};
   const mkSide=(party,side)=>{
     return party.units.filter(u=>u.hp>0).map(u=>{
       const bu={u, side, atb:rnd(25), act:'attack', retreated:false,
@@ -82,6 +84,7 @@ function openATB(cfg){
     renderATB(); atbLog('Full retreat ordered!','imp');
   };
   B.ticker=setInterval(tickATB,90);
+  return done;
 }
 function unitCard(b){
   const u=b.u;
@@ -298,7 +301,9 @@ function endATB(result){
   B.over=true; clearInterval(B.ticker);
   setTimeout(()=>{
     const modal=$('atb'); if(modal)modal.remove();
+    const onEnd=B.onEnd;
     resolveFieldBattle(result);
+    if(onEnd)onEnd();
   },700);
 }
 function resolveFieldBattle(result){
@@ -379,9 +384,7 @@ async function enemyTurn(){
     if(best&&best.score>40){
       if(!best.atStart)await walk(e,pathToF(r0,best.ax,best.ay));
       e.face=best.def.x>e.x?'E':best.def.x<e.x?'W':best.def.y>e.y?'S':'N'; placeTok(e);
-      if(best.isHQ)fieldSiege(e,best.def); else fieldAttack(e,best.def);
-      /* wait for ATB battle to conclude */
-      await new Promise(res=>{ const iv=setInterval(()=>{ if(!$('atb')){clearInterval(iv); res();} },200); });
+      if(best.isHQ)await fieldSiege(e,best.def); else await fieldAttack(e,best.def);
       continue;
     }
     /* march */
